@@ -5,10 +5,15 @@ Auto-generated cron pipeline — lecture quality dashboards
 
 Ported from the DS_batches_data notebook, wrapped for unattended GitHub
 Actions execution:
-  - Auth via env vars / service account instead of Colab's interactive auth.
+  - Auth via a Metabase API key (X-Api-Key header) instead of the old
+    username/password session-login flow — no more ASHRITHA_SECRET_KEY,
+    no login POST, no token refresh step.
   - requests.post is patched to use a retry-hardened Session (connection
     resets / 5xx / 429 are retried automatically), matching the fix applied
     to the main Assignment Automation Pipeline for card 9913-style failures.
+  - gc.open()/gc.open_by_key() calls are wrapped so a missing share grant
+    fails with the exact service-account email to add, instead of a bare
+    SpreadsheetNotFound traceback.
   - Any uncaught exception exits non-zero so the GitHub Actions run goes red.
 """
 
@@ -29,16 +34,12 @@ from google.oauth2.service_account import Credentials
 start_time = time.time()
 
 # -------------------- ENV & AUTH --------------------
-sec = os.getenv("ASHRITHA_SECRET_KEY")
-User_name = os.getenv("METABASE_USERNAME") or os.getenv("USERNAME")
+METABASE_API_KEY = os.getenv("METABASE_API_KEY")
 service_account_json = os.getenv("SERVICE_ACCOUNT_JSON")
-MB_URL = os.getenv("METABASE_URL")
 
 missing = [n for n, v in [
-    ("ASHRITHA_SECRET_KEY", sec),
-    ("METABASE_USERNAME/USERNAME", User_name),
+    ("METABASE_API_KEY", METABASE_API_KEY),
     ("SERVICE_ACCOUNT_JSON", service_account_json),
-    ("METABASE_URL", MB_URL),
 ] if not v]
 if missing:
     raise ValueError(f"❌ Missing environment variables: {', '.join(missing)}")
@@ -82,28 +83,43 @@ SESSION.mount("http://", _adapter)
 # call site individually.
 requests.post = SESSION.post
 
-token = None
+# Static header used for every Metabase API call — no login step, no
+# token expiry/refresh to worry about.
+METABASE_HEADERS = {
+    "Content-Type": "application/json",
+    "X-Api-Key": METABASE_API_KEY,
+}
 
 
-def refresh_metabase_token():
-    global token
-    res = SESSION.post(
-        MB_URL,
-        headers={"Content-Type": "application/json"},
-        json={"username": User_name, "password": sec},
-        timeout=(15, 60),
-    )
-    res.raise_for_status()
-    token = res.json()["id"]
-    print("✅ Metabase session token refreshed")
+def safe_open_sheet(title):
+    """gc.open() wrapped to fail with an actionable message (the exact
+    service-account email to share the sheet with) instead of a bare
+    SpreadsheetNotFound traceback."""
+    try:
+        return gc.open(title)
+    except gspread.exceptions.SpreadsheetNotFound:
+        raise RuntimeError(
+            f"❌ Could not open Google Sheet '{title}'. Either the title "
+            f"doesn't match exactly, or it hasn't been shared with this "
+            f"service account: {service_info.get('client_email')}. "
+            "Share it as Editor, then re-run."
+        )
 
 
-refresh_metabase_token()
+def safe_open_by_key(key):
+    """Same as safe_open_sheet, but for gc.open_by_key()."""
+    try:
+        return gc.open_by_key(key)
+    except gspread.exceptions.SpreadsheetNotFound:
+        raise RuntimeError(
+            f"❌ Could not open Google Sheet with key '{key}'. Share it with "
+            f"this service account as Editor: {service_info.get('client_email')}"
+        )
+
 
 print("🔎 ENV CHECK")
-print(f"   MB user           : {'[SET]' if User_name else '[MISSING]'}")
-print(f"   SA client_email   : {service_info.get('client_email')}")
-print(f"   Token acquired    : {bool(token)}")
+print(f"   Metabase API key   : {'[SET]' if METABASE_API_KEY else '[MISSING]'}")
+print(f"   SA client_email    : {service_info.get('client_email')}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PIPELINE BODY (ported from notebook cells: 30-44)
@@ -155,7 +171,7 @@ try:
 
 
     # ---------- 1. READ INPUT ----------
-    ws_in = gc.open(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
+    ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
     raw = ws_in.get_all_values()
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
@@ -277,7 +293,7 @@ try:
     print(f"Instructor COC table: {coc_instructor.shape} | Instructor WOW table: {wow_instructor.shape}")
 
     # ---------- 5. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
 
     def get_or_create_ws(book, title, rows=600, cols=60):
         try:
@@ -314,15 +330,12 @@ try:
     #    (query now includes week_start_date and week_no_wrt_module)
     # ---------------------------------------------------------
     res = requests.post(
-        'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/11408/query/json',
-        headers={
-            'Content-Type': 'application/json',
-            'X-Metabase-Session': token
-        }
+        f'{METABASE_BASE}/api/card/11408/query/json',
+        headers=METABASE_HEADERS
     )
     response_json = res.json()
     df_on_time = pd.DataFrame(response_json)
-    sheet = gc.open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
+    sheet = safe_open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
     worksheet = sheet.worksheet("On_time_join_rate")
     # clearing worksheet
     worksheet.clear()
@@ -377,7 +390,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -491,7 +504,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 4. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -519,15 +532,12 @@ try:
     #    (query now includes week_start_date and week_no_wrt_module)
     # ---------------------------------------------------------
     res = requests.post(
-        'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/11409/query/json',
-        headers={
-            'Content-Type': 'application/json',
-            'X-Metabase-Session': token
-        }
+        f'{METABASE_BASE}/api/card/11409/query/json',
+        headers=METABASE_HEADERS
     )
     response_json = res.json()
     df_scr = pd.DataFrame(response_json)
-    sheet = gc.open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
+    sheet = safe_open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
     worksheet = sheet.worksheet("session_completion_rate")
     # clearing worksheet
     worksheet.clear()
@@ -583,7 +593,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -697,7 +707,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 4. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -725,15 +735,12 @@ try:
     #    (query now includes week_start_date and week_no_wrt_module)
     # ---------------------------------------------------------
     res = requests.post(
-        'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/11410/query/json',
-        headers={
-            'Content-Type': 'application/json',
-            'X-Metabase-Session': token
-        }
+        f'{METABASE_BASE}/api/card/11410/query/json',
+        headers=METABASE_HEADERS
     )
     response_json = res.json()
     df_mdr = pd.DataFrame(response_json)
-    sheet = gc.open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
+    sheet = safe_open_by_key('1vmSaipWrCYXI6eVxf10H3XYJhNycVQxxAA6x_s2Rdvc')
     worksheet = sheet.worksheet("drop_off_rate")
     # clearing worksheet
     worksheet.clear()
@@ -790,7 +797,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -904,7 +911,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 4. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -936,8 +943,8 @@ try:
     CARD_ID = 11425  # <-- set this to your saved M05 card id
 
     res = requests.post(
-        f'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/{CARD_ID}/query/json',
-        headers={'Content-Type': 'application/json', 'X-Metabase-Session': token}
+        f'{METABASE_BASE}/api/card/{CARD_ID}/query/json',
+        headers=METABASE_HEADERS
     )
     raw_leave = pd.DataFrame(res.json())  # columns: lecture_id, course_id, batch_name, user_id, lecture_duration_mins, leave_min
 
@@ -997,7 +1004,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     def mode_max(series):
@@ -1159,7 +1166,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 8. WRITE — 4 tabs only ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=80):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -1191,8 +1198,8 @@ try:
     CARD_ID = 11426  # <-- set this to your saved M06 card id
 
     res = requests.post(
-        f'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/{CARD_ID}/query/json',
-        headers={'Content-Type': 'application/json', 'X-Metabase-Session': token}
+        f'{METABASE_BASE}/api/card/{CARD_ID}/query/json',
+        headers=METABASE_HEADERS
     )
     metric = pd.DataFrame(res.json())   # columns: lecture_id, course_id, batch_name, attendees, avg_time_in_session_mins
 
@@ -1238,7 +1245,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -1341,7 +1348,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 4. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -1374,8 +1381,8 @@ try:
     CARD_ID = 11414  # <-- set this to your saved M07 card id
 
     res = requests.post(
-        f'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/{CARD_ID}/query/json',
-        headers={'Content-Type': 'application/json', 'X-Metabase-Session': token}
+        f'{METABASE_BASE}/api/card/{CARD_ID}/query/json',
+        headers=METABASE_HEADERS
     )
     raw_attendance = pd.DataFrame(res.json())   # columns: lecture_id, course_id, batch_name, user_id
 
@@ -1425,7 +1432,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -1551,7 +1558,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 5. WRITE TO OUTPUT SHEET ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
 
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
@@ -1587,8 +1594,8 @@ try:
     CARD_ID = 11427  # <-- same M07 card id
 
     res = requests.post(
-        f'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/{CARD_ID}/query/json',
-        headers={'Content-Type': 'application/json', 'X-Metabase-Session': token}
+        f'{METABASE_BASE}/api/card/{CARD_ID}/query/json',
+        headers=METABASE_HEADERS
     )
     raw_attendance = pd.DataFrame(res.json())
 
@@ -1630,7 +1637,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -1756,7 +1763,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 5. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -1790,8 +1797,8 @@ try:
     CARD_ID = 11427  # <-- same M07/M08 card id
 
     res = requests.post(
-        f'https://metabase-lierhfgoeiwhr.newtonschool.co/api/card/{CARD_ID}/query/json',
-        headers={'Content-Type': 'application/json', 'X-Metabase-Session': token}
+        f'{METABASE_BASE}/api/card/{CARD_ID}/query/json',
+        headers=METABASE_HEADERS
     )
     raw_attendance = pd.DataFrame(res.json())
 
@@ -1842,7 +1849,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = gc.open(name).worksheet(tab).get_all_values()
+        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -1977,7 +1984,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 4. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
             ws = book.worksheet(title); ws.clear()
@@ -2054,7 +2061,7 @@ try:
         return None
 
     # ---------- 1. READ INPUT ----------
-    ws_in = gc.open(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
+    ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
     raw = ws_in.get_all_values()
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
@@ -2157,7 +2164,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 5. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
 
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
@@ -2236,7 +2243,7 @@ try:
         return None
 
     # ---------- 1. READ INPUT ----------
-    ws_in = gc.open(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
+    ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
     raw = ws_in.get_all_values()
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
@@ -2352,7 +2359,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 5. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
 
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
@@ -2427,7 +2434,7 @@ try:
         return None
 
     # ---------- 1. READ INPUT ----------
-    ws_in = gc.open(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
+    ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
     raw = ws_in.get_all_values()
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
@@ -2537,7 +2544,7 @@ try:
     print(f"Instructor DOD: {coc_instructor.shape} | Instructor WOW: {wow_instructor.shape}")
 
     # ---------- 5. WRITE ----------
-    out_book = gc.open_by_key(OUTPUT_SHEET_KEY)
+    out_book = safe_open_by_key(OUTPUT_SHEET_KEY)
 
     def get_or_create_ws(book, title, rows=400, cols=60):
         try:
