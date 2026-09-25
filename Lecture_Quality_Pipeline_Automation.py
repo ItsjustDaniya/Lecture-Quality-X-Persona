@@ -143,6 +143,9 @@ try:
         'SQL':          r'DS SQL',
         'Spreadsheets': r'DS Spreadsheet',
         'Power BI':     r'DS Power ?BI',
+        'Python':       r'DS Python',
+        'EDA 1':        r'DS EDA 1',
+        'EDA 2':        r'DS EDA 2',
     }
 
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')   # keep cohorts in this month or later
@@ -368,7 +371,7 @@ try:
     WOW_INSTRUCTOR_TAB  = 'M02 On-Time Join Instructor (WOW)'
     WOW_AGG             = 'mean'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -571,7 +574,7 @@ try:
     WOW_AGG             = 'mean'
     # ================================================================
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -775,7 +778,7 @@ try:
     WOW_AGG             = 'mean'
     # ================================================================
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -961,7 +964,7 @@ try:
     BUCKET_MINUTES = 15   # 15-minute intervals → 8 buckets for a 2-hour session
     MAX_BUCKETS    = 8    # 2hrs / 15min = 8 parts
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -1216,7 +1219,7 @@ try:
     METRIC_VALUE_COL   = 'avg_time_in_session_mins'
     METRIC_LECTURE_COL = 'lecture_id'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     WOW_AGG = 'mean'
@@ -1398,7 +1401,7 @@ try:
     DOD_INSTRUCTOR_TAB = 'M07 Retention Instructor (DOD)'
     WOW_INSTRUCTOR_TAB = 'M07 Retention Instructor (WOW)'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ========================================================================
@@ -1609,7 +1612,7 @@ try:
     DOD_INSTRUCTOR_TAB = 'M08 Cohort Retention Instructor (DOD)'
     WOW_INSTRUCTOR_TAB = 'M08 Cohort Retention Instructor (WOW)'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -1822,7 +1825,7 @@ try:
     # the Instructor column from the final output.
     ENROLLED_COL = 'batch_strength'   # used as the enrolled denominator for the WOW absence rate
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     # ================================================================
 
@@ -2027,7 +2030,7 @@ try:
     # rather track raw attempts regardless of timing.
     METRIC_COL = 'batch_completion_rate_on_time'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -2209,7 +2212,7 @@ try:
     LIVE_ATTEND_COL  = 'live_attendees'
     MIN_RESPONSE_PCT = 0.30
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
@@ -2400,7 +2403,7 @@ try:
     RESPONDERS_COL   = 'total_users_filled'
     LIVE_ATTEND_COL  = 'overall_viewers'
 
-    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI'}
+    MODULES = {'SQL': r'DS SQL', 'Spreadsheets': r'DS Spreadsheet', 'Power BI': r'DS Power ?BI', 'Python': r'DS Python', 'EDA 1': r'DS EDA 1', 'EDA 2': r'DS EDA 2'}
     CUTOFF_MONTH = pd.Timestamp('2025-12-01')
     MIN_CLASSES_PER_ROW = 1
     # ================================================================
