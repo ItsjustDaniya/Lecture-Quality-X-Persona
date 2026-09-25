@@ -52,7 +52,49 @@ creds = Credentials.from_service_account_info(
         "https://www.googleapis.com/auth/drive",
     ],
 )
-gc = gspread.authorize(creds)
+# Google Sheets allows ~60 write requests per minute per user. With EDA/Python
+# batches added, the pipeline writes more tabs than that in under a minute and
+# gets a 429 "Quota exceeded ... Write requests per minute per user".
+# BackOffHTTPClient (gspread >= 6) retries 429/5xx with exponential backoff
+# (1s, 2s, 4s ... up to 128s) instead of crashing the run.
+try:
+    from gspread.http_client import BackOffHTTPClient
+    gc = gspread.authorize(creds, http_client=BackOffHTTPClient)
+    print("🔁 gspread BackOffHTTPClient enabled (auto-retry on 429 quota errors)")
+except ImportError:
+    gc = gspread.authorize(creds)
+    print("⚠️ gspread < 6: BackOffHTTPClient unavailable, using manual retry wrapper only")
+
+# Belt-and-braces: retry the two write calls the pipeline uses (ws.clear and
+# set_with_dataframe) if a 429 still slips through. Patched at module level so
+# the per-cell `from gspread_dataframe import set_with_dataframe` re-imports
+# pick up the wrapped version too.
+import gspread_dataframe as _gdf
+from gspread.worksheet import Worksheet as _Worksheet
+
+
+def _with_quota_retry(fn, label, max_tries=6):
+    def wrapper(*args, **kwargs):
+        wait = 20
+        for attempt in range(1, max_tries + 1):
+            try:
+                return fn(*args, **kwargs)
+            except gspread.exceptions.APIError as e:
+                code = getattr(getattr(e, "response", None), "status_code", None)
+                if code == 429 or "Quota exceeded" in str(e):
+                    if attempt == max_tries:
+                        raise
+                    print(f"   ⏳ Sheets write quota hit in {label} (try {attempt}/{max_tries}); waiting {wait}s…")
+                    time.sleep(wait)
+                    wait = min(wait * 2, 90)
+                else:
+                    raise
+    return wrapper
+
+
+_Worksheet.clear = _with_quota_retry(_Worksheet.clear, "ws.clear")
+_gdf.set_with_dataframe = _with_quota_retry(_gdf.set_with_dataframe, "set_with_dataframe")
+set_with_dataframe = _gdf.set_with_dataframe
 
 METABASE_BASE = "https://metabase-lierhfgoeiwhr.newtonschool.co"
 
