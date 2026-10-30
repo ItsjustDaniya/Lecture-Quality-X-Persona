@@ -133,6 +133,42 @@ METABASE_HEADERS = {
 }
 
 
+def read_all_values(ws):
+    """All cells as text, but numbers from their REAL value, not the cell's display.
+
+    get_all_values() returns what the cell shows, so a 4.53 rating in a cell with a
+    "#,##0" number format came back as "5" (and 1401 as "1,401"). Read numbers
+    unformatted and dates as their display string, then turn everything back into
+    the same text shape the rest of the pipeline expects.
+    """
+    raw = ws.get_all_values(value_render_option='UNFORMATTED_VALUE',
+                            date_time_render_option='FORMATTED_STRING')
+    def as_text(v):
+        if v is None:
+            return ''
+        if isinstance(v, bool):
+            return 'TRUE' if v else 'FALSE'
+        if isinstance(v, float):
+            return str(int(v)) if v.is_integer() else repr(v)
+        return str(v)
+    return [[as_text(v) for v in row] for row in raw]
+
+
+def keep_real_lecture_row(frame, keys=('Batch', 'lecture_id', 'instructor_name')):
+    """Drop duplicate lecture rows, keeping the copy with the most live attendees.
+
+    The Calendar Lecture_Quality tab often has a second copy of a lecture with
+    batch_strength 1 and live_attendees 0. Keeping whichever copy came first meant
+    that copy sometimes won, and the lecture's metrics went blank.
+    """
+    if 'live_attendees' in frame.columns:
+        order = pd.to_numeric(frame['live_attendees'], errors='coerce').fillna(-1)
+        frame = frame.assign(_live_order=order).sort_values('_live_order', ascending=False, kind='stable')
+        frame = frame.drop_duplicates(list(keys)).drop(columns='_live_order').sort_index()
+        return frame
+    return frame.drop_duplicates(list(keys))
+
+
 def safe_open_sheet(title):
     """gc.open() wrapped to fail with an actionable message (the exact
     service-account email to share the sheet with) instead of a bare
@@ -217,7 +253,7 @@ try:
 
     # ---------- 1. READ INPUT ----------
     ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
-    raw = ws_in.get_all_values()
+    raw = read_all_values(ws_in)
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
 
@@ -243,7 +279,7 @@ try:
             frames.append(s)
 
     allsub = pd.concat(frames, ignore_index=True)
-    allsub = allsub.drop_duplicates(['Batch', 'lecture_id', 'instructor_name'])
+    allsub = keep_real_lecture_row(allsub)
 
     # class number = chronological index of each unique lecture within its batch
     lo = (allsub[['Batch', 'lecture_id', 'date']]
@@ -435,7 +471,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -638,7 +674,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -842,7 +878,7 @@ try:
         return pd.Timestamp(year=year, month=month, day=1)
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -1049,7 +1085,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     def mode_max(series):
@@ -1290,7 +1326,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON ----------
@@ -1477,7 +1513,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -1682,7 +1718,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -1894,7 +1930,7 @@ try:
         return None
 
     def read_sheet(name, tab):
-        raw = safe_open_sheet(name).worksheet(tab).get_all_values()
+        raw = read_all_values(safe_open_sheet(name).worksheet(tab))
         return pd.DataFrame(raw[1:], columns=raw[0])
 
     # ---------- 1. BUILD THE LECTURE SKELETON (class_no / week_no per batch) ----------
@@ -2107,7 +2143,7 @@ try:
 
     # ---------- 1. READ INPUT ----------
     ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
-    raw = ws_in.get_all_values()
+    raw = read_all_values(ws_in)
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
 
@@ -2121,7 +2157,7 @@ try:
     df['instructor_name'] = df['instructor_name'].fillna('Unknown').str.strip()
 
     allsub = df[df['module'].notna() & (df['batch_month'] >= CUTOFF_MONTH)].copy()
-    allsub = allsub.drop_duplicates(['Batch', 'lecture_id', 'instructor_name'])
+    allsub = keep_real_lecture_row(allsub)
 
     # ---------- 3. class_no / week_no PER BATCH ----------
     lo = (allsub[['Batch', 'lecture_id', 'date']]
@@ -2289,7 +2325,7 @@ try:
 
     # ---------- 1. READ INPUT ----------
     ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
-    raw = ws_in.get_all_values()
+    raw = read_all_values(ws_in)
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
 
@@ -2297,6 +2333,15 @@ try:
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df['lecture_id'] = pd.to_numeric(df['lecture_id'], errors='coerce').astype('Int64')
     df[RATING_COL]      = pd.to_numeric(df[RATING_COL], errors='coerce')
+    # Rating from the star counts only. lecture_rating_out_of_five divides by
+    # total_users_filled, which also counts students who filled the form but
+    # skipped the star question, so they were scored as 0.
+    STAR_COLS = {'5_star': 5, '4_star': 4, '3_star': 3, '2_star': 2, '1_star': 1}
+    if all(c in df.columns for c in STAR_COLS):
+        stars = {c: pd.to_numeric(df[c], errors='coerce').fillna(0) for c in STAR_COLS}
+        n_rated = sum(stars.values())
+        weighted = sum(stars[c] * w for c, w in STAR_COLS.items())
+        df[RATING_COL] = np.where(n_rated > 0, weighted / n_rated.where(n_rated > 0), df[RATING_COL])
     df[RESPONDERS_COL]  = pd.to_numeric(df[RESPONDERS_COL], errors='coerce')
     df[LIVE_ATTEND_COL] = pd.to_numeric(df[LIVE_ATTEND_COL], errors='coerce')
 
@@ -2313,7 +2358,7 @@ try:
     df['instructor_name'] = df['instructor_name'].fillna('Unknown').str.strip()
 
     allsub = df[df['module'].notna() & (df['batch_month'] >= CUTOFF_MONTH)].copy()
-    allsub = allsub.drop_duplicates(['Batch', 'lecture_id', 'instructor_name'])
+    allsub = keep_real_lecture_row(allsub)
 
     n_invalid = ((allsub['response_rate'] < MIN_RESPONSE_PCT) & allsub[RATING_COL].notna()).sum()
     print(f"Lectures excluded for <{int(MIN_RESPONSE_PCT*100)}% feedback response rate: {n_invalid}")
@@ -2480,7 +2525,7 @@ try:
 
     # ---------- 1. READ INPUT ----------
     ws_in = safe_open_sheet(INPUT_SHEET_NAME).worksheet(INPUT_WORKSHEET)
-    raw = ws_in.get_all_values()
+    raw = read_all_values(ws_in)
     df = pd.DataFrame(raw[1:], columns=raw[0])
     print(f"Read input: {df.shape[0]} rows")
 
@@ -2501,7 +2546,7 @@ try:
     df['instructor_name'] = df['instructor_name'].fillna('Unknown').str.strip()
 
     allsub = df[df['module'].notna() & (df['batch_month'] >= CUTOFF_MONTH)].copy()
-    allsub = allsub.drop_duplicates(['Batch', 'lecture_id', 'instructor_name'])
+    allsub = keep_real_lecture_row(allsub)
 
     # ---------- 3. class_no / week_no PER BATCH ----------
     lo = (allsub[['Batch', 'lecture_id', 'date']]
