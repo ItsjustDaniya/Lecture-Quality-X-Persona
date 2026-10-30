@@ -2655,6 +2655,10 @@ try:
 except Exception as e:
     print(f"❌ Pipeline failed: {e}")
     traceback.print_exc()
+    if os.environ.get("GITHUB_ACTIONS"):  # show the reason on the Actions run page
+        tb = traceback.extract_tb(e.__traceback__)[-1]
+        msg = f"{type(e).__name__} at line {tb.lineno}: {e}"
+        print("::error::" + msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
     sys.exit(1)
 
 mins, secs = divmod(time.time() - start_time, 60)
